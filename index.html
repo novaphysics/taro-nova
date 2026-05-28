@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>타로카드 스프레드 시뮬레이터</title>
+    <style>
+        body {
+            background-color: #0a0a0a;
+            color: #ececec;
+            font-family: 'Pretendard', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+            overflow-x: hidden;
+        }
+
+        /* 컨트롤 패널 */
+        .settings-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            max-width: 600px;
+            margin-bottom: 20px;
+        }
+
+        .question-input {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            border-radius: 4px;
+            border: 1px solid #333;
+            background-color: #111;
+            color: #fff;
+            text-align: center;
+            outline: none;
+        }
+
+        .question-input:focus { border-color: #555; }
+        .question-input:disabled { background-color: #050505; color: #555; }
+
+        .options-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        select, button {
+            padding: 12px 16px;
+            font-size: 15px;
+            background-color: #111;
+            color: #ddd;
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        select:disabled, button:disabled {
+            color: #444;
+            border-color: #222;
+            cursor: not-allowed;
+        }
+
+        button:not(:disabled):hover { background-color: #333; }
+        
+        /* 1단계: 수동 선택 영역 */
+        .selection-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 1200px;
+            margin-top: 20px;
+        }
+
+        .selection-slots {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            min-height: 120px;
+        }
+
+        .mini-slot {
+            width: 80px;
+            height: 120px;
+            border: 2px dashed #444;
+            border-radius: 6px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .mini-card {
+            width: 80px;
+            height: 120px;
+            border-radius: 6px;
+            background-image: url('./images/back.png');
+            background-size: cover;
+            background-position: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        .spread-deck {
+            display: flex;
+            width: 100%;
+            overflow-x: auto;
+            padding: 20px 40px;
+            box-sizing: border-box;
+            gap: 0; 
+        }
+
+        .spread-deck::-webkit-scrollbar { height: 10px; }
+        .spread-deck::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+
+        .selectable-card {
+            min-width: 90px;
+            height: 140px;
+            border-radius: 6px;
+            background-image: url('./images/back.png');
+            background-size: cover;
+            background-position: center;
+            margin-left: -50px; 
+            cursor: pointer;
+            transition: transform 0.3s ease;
+            box-shadow: -5px 0 10px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        .selectable-card:first-child { margin-left: 0; }
+        .selectable-card:hover { transform: translateY(-20px); z-index: 100; }
+        .selectable-card.hidden { visibility: hidden; pointer-events: none; }
+
+        /* 2단계: 결과 공개 영역 */
+        .reveal-container {
+            display: none;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .card-slot {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .slot-label { font-size: 16px; color: #777; letter-spacing: 2px; }
+
+        .card {
+            width: 220px;
+            height: 380px;
+            perspective: 1200px;
+            cursor: pointer;
+        }
+
+        .card-inner {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+
+        .card.flipped .card-inner { transform: rotateY(180deg); }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #111;
+        }
+
+        .card-front { transform: rotateY(180deg); border: 1px solid #444; }
+        
+        .card-img { width: 100%; height: 100%; object-fit: cover; }
+        .is-reversed { transform: rotate(180deg); }
+
+        /* ✨ 마이너 아르카나 전용 오버레이 CSS ✨ */
+        .minor-card-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .minor-bg {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+
+        .minor-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            /* 이미지 위에 어두운 그라데이션을 깔아 텍스트 가독성 확보 */
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2;
+        }
+
+        .minor-rank { 
+            font-size: 48px; 
+            font-weight: bold; 
+            color: #ffd700; 
+            text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+            margin-bottom: 5px;
+            font-family: 'Nanum Myeongjo', serif;
+        }
+
+        .minor-suit { 
+            font-size: 18px; 
+            color: #eee; 
+            letter-spacing: 2px; 
+            text-shadow: 0 2px 5px rgba(0,0,0,0.8);
+        }
+
+        .dir-upright { color: #5dade2; }
+        .dir-reversed { color: #e74c3c; }
+
+        /* 공통 UI 요소 */
+        .status-message {
+            margin: 30px 0;
+            font-size: 18px;
+            color: #aaa;
+            height: 24px;
+        }
+
+        /* 3단계: 프롬프트 표시 영역 */
+        .prompt-container {
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            max-width: 800px;
+            margin-top: 30px;
+            background-color: #151515;
+            padding: 25px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            box-sizing: border-box;
+        }
+
+        .prompt-title { color: #ffd700; font-size: 18px; margin: 0; text-align: center; }
+
+        .prompt-textarea {
+            width: 100%;
+            height: 220px;
+            background-color: #0a0a0a;
+            color: #ddd;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 15px;
+            font-size: 15px;
+            font-family: inherit;
+            line-height: 1.5;
+            resize: vertical;
+            box-sizing: border-box;
+            outline: none;
+        }
+        
+        .prompt-textarea:focus { border-color: #2e7d32; }
+
+        .bottom-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        #copyPromptBtn { color: #4caf50; border-color: #2e7d32; font-weight: bold; }
+        #copyPromptBtn:hover { background-color: rgba(76, 175, 80, 0.1); }
+    </style>
+</head>
+<body>
+
+    <div class="settings-panel">
+        <input type="text" id="questionInput" class="question-input" placeholder="질문을 입력하세요." autocomplete="off">
+        <div class="options-row">
+            <select id="deckType">
+                <option value="major">메이저 22장</option>
+                <option value="full">전체 78장 (마이너 포함)</option>
+            </select>
+            <select id="spreadType">
+                <option value="3">3장 배열</option>
+                <option value="4">4장 배열</option>
+            </select>
+            <button id="startBtn" disabled>스프레드 시작</button>
+        </div>
+    </div>
+
+    <div class="status-message" id="statusMessage">설정을 마치고 스프레드 시작을 눌러주세요.</div>
+
+    <div class="selection-container" id="selectionContainer">
+        <div class="selection-slots" id="selectionSlots"></div>
+        <div class="spread-deck" id="spreadDeck"></div>
+    </div>
+
+    <div class="reveal-container" id="revealContainer"></div>
+
+    <div class="prompt-container" id="promptContainer">
+        <h3 class="prompt-title">🔮 생성형 AI (LLM) 해석용 프롬프트</h3>
+        <p style="color: #888; font-size: 14px; text-align: center; margin: 0 0 10px 0;">
+            아래 텍스트를 복사하여 ChatGPT, Gemini 등에게 전달하면 상세한 타로 해설을 받을 수 있습니다.
+        </p>
+        <textarea id="promptTextarea" class="prompt-textarea"></textarea>
+        <div class="bottom-actions">
+            <button id="copyPromptBtn">복사하기 (Copy)</button>
+            <button id="resetBtn">처음으로 (Reset)</button>
+        </div>
+    </div>
+
+    <script>
+        const majorArcanaData = [
+            { id: 0, name: "0. 바보 (The Fool)", keywords: { upright: "새로운 시작, 자유, 순수, 모험", reversed: "무모함, 부주의, 현실 도피" } },
+            { id: 1, name: "1. 마법사 (The Magician)", keywords: { upright: "창조력, 의지, 실행력, 뛰어난 재능", reversed: "잠재력 낭비, 속임수, 의지 부족" } },
+            { id: 2, name: "2. 고위 여사제 (The High Priestess)", keywords: { upright: "직관, 통찰력, 비밀, 수용성", reversed: "숨겨진 적, 표면적인 지식, 감정 기복" } },
+            { id: 3, name: "3. 여황제 (The Empress)", keywords: { upright: "풍요, 모성애, 창조성, 아름다움", reversed: "과보호, 질투, 허영심, 낭비" } },
+            { id: 4, name: "4. 황제 (The Emperor)", keywords: { upright: "권위, 구조, 책임감, 논리적 지배", reversed: "독재, 통제력 상실, 융통성 부족" } },
+            { id: 5, name: "5. 교황 (The Hierophant)", keywords: { upright: "전통, 신념, 정신적 가르침, 제도", reversed: "관습에 얽매임, 맹신, 이단적인 생각" } },
+            { id: 6, name: "6. 연인 (The Lovers)", keywords: { upright: "사랑, 조화, 깊은 결합, 가치관 일치", reversed: "갈등, 불균형, 잘못된 선택" } },
+            { id: 7, name: "7. 전차 (The Chariot)", keywords: { upright: "추진력, 승리, 의지력, 양극단의 통제", reversed: "방향 상실, 패배, 통제 불능" } },
+            { id: 8, name: "8. 힘 (Strength)", keywords: { upright: "용기, 인내, 내면의 힘, 부드러운 통제", reversed: "자기 의심, 무기력, 본능에 굴복" } },
+            { id: 9, name: "9. 은둔자 (The Hermit)", keywords: { upright: "자아 성찰, 고독, 내면의 지혜 탐구", reversed: "고립, 은둔, 현실 도피, 편협함" } },
+            { id: 10, name: "10. 운명의 수레바퀴", keywords: { upright: "운명적인 변화, 전환점, 순환, 행운", reversed: "불운, 통제할 수 없는 악화, 저항" } },
+            { id: 11, name: "11. 정의 (Justice)", keywords: { upright: "공정함, 균형, 인과응보, 객관적 결정", reversed: "불공정, 편견, 우유부단, 법적 문제" } },
+            { id: 12, name: "12. 매달린 사람", keywords: { upright: "새로운 관점, 자발적 희생, 기다림", reversed: "무의미한 희생, 이기심, 상황에 끌려감" } },
+            { id: 13, name: "13. 죽음 (Death)", keywords: { upright: "종결, 불가피한 변화, 새로운 시작", reversed: "변화에 대한 두려움, 정체, 침체" } },
+            { id: 14, name: "14. 절제 (Temperance)", keywords: { upright: "조화, 균형, 중용, 융합", reversed: "불균형, 극단적인 행동, 무절제" } },
+            { id: 15, name: "15. 악마 (The Devil)", keywords: { upright: "구속, 집착, 물질주의, 유혹", reversed: "속박에서의 해방, 깨달음" } },
+            { id: 16, name: "16. 탑 (The Tower)", keywords: { upright: "갑작스러운 붕괴, 재난, 충격", reversed: "피할 수 없는 위기, 변화에 대한 저항" } },
+            { id: 17, name: "17. 별 (The Star)", keywords: { upright: "희망, 영감, 치유, 긍정적인 전망", reversed: "절망, 실망, 영감의 고갈" } },
+            { id: 18, name: "18. 달 (The Moon)", keywords: { upright: "불안, 환상, 무의식, 숨겨진 두려움", reversed: "오해 해소, 두려움 극복, 진실 발견" } },
+            { id: 19, name: "19. 태양 (The Sun)", keywords: { upright: "성공, 기쁨, 긍정, 드러난 진실", reversed: "지연된 성공, 일시적인 우울, 과장" } },
+            { id: 20, name: "20. 심판 (Judgement)", keywords: { upright: "부활, 각성, 과거의 청산, 새로운 소명", reversed: "자기 회피, 후회, 잘못된 판단" } },
+            { id: 21, name: "21. 세계 (The World)", keywords: { upright: "완성, 통합, 성취, 사이클의 종료", reversed: "미완성, 정체, 성취 직전의 실패" } }
+        ].map(card => ({ ...card, type: 'major', imagePath: `./images/${card.id}.png` }));
+
+        // ✨ 마이너 아르카나 동적 생성 로직 업데이트 (이미지 매핑 추가) ✨
+        function generateMinorArcana() {
+            const suits = { 
+                "지팡이 (Wands)": { id: "wands", kor: "WANDS", essence: "행동, 열정, 의지", element: "불" },
+                "컵 (Cups)": { id: "cups", kor: "CUPS", essence: "감정, 관계, 직관", element: "물" },
+                "검 (Swords)": { id: "swords", kor: "SWORDS", essence: "사고, 논리, 갈등", element: "공기" },
+                "펜타클 (Pentacles)": { id: "pentacles", kor: "PENTACLES", essence: "물질, 안정, 결과", element: "흙" }
+            };
+            const ranks = ["Ace", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Page", "Knight", "Queen", "King"];
+            let minorCards = [];
+            
+            Object.keys(suits).forEach(suitName => {
+                ranks.forEach(rank => {
+                    minorCards.push({
+                        id: `minor_${suits[suitName].id}_${rank}`,
+                        name: `${suitName} - ${rank}`,
+                        suitId: suits[suitName].id,
+                        suitKor: suits[suitName].kor,
+                        rank: rank,
+                        type: 'minor',
+                        imagePath: null,
+                        keywords: {
+                            upright: `${suits[suitName].element}의 에너지(${suits[suitName].essence})가 ${rank}의 단계에 도달함 (긍정적/발전적 흐름)`,
+                            reversed: `${suits[suitName].element}의 에너지(${suits[suitName].essence})가 왜곡되거나 막힘 (부정적/지연된 흐름)`
+                        }
+                    });
+                });
+            });
+            return minorCards;
+        }
+        const minorArcanaData = generateMinorArcana();
+
+        let currentDeck = [];
+        let drawnCards = [];
+        let requiredCount = 3;
+
+        const questionInput = document.getElementById('questionInput');
+        const deckType = document.getElementById('deckType');
+        const spreadType = document.getElementById('spreadType');
+        const startBtn = document.getElementById('startBtn');
+        const statusMessage = document.getElementById('statusMessage');
+        const selectionContainer = document.getElementById('selectionContainer');
+        const selectionSlots = document.getElementById('selectionSlots');
+        const spreadDeck = document.getElementById('spreadDeck');
+        const revealContainer = document.getElementById('revealContainer');
+        const promptContainer = document.getElementById('promptContainer');
+        const promptTextarea = document.getElementById('promptTextarea');
+        const copyPromptBtn = document.getElementById('copyPromptBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        questionInput.addEventListener('input', (e) => {
+            startBtn.disabled = e.target.value.trim().length === 0;
+        });
+
+        startBtn.addEventListener('click', () => {
+            questionInput.disabled = true;
+            deckType.disabled = true;
+            spreadType.disabled = true;
+            startBtn.style.display = 'none';
+
+            requiredCount = parseInt(spreadType.value);
+            const isFullDeck = deckType.value === 'full';
+            
+            currentDeck = isFullDeck ? [...majorArcanaData, ...minorArcanaData] : [...majorArcanaData];
+            for (let i = currentDeck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [currentDeck[i], currentDeck[j]] = [currentDeck[j], currentDeck[i]];
+            }
+
+            startSelectionPhase();
+        });
+
+        function startSelectionPhase() {
+            selectionContainer.style.display = 'flex';
+            statusMessage.textContent = `직관에 따라 ${requiredCount}장의 카드를 선택하세요.`;
+            
+            selectionSlots.innerHTML = '';
+            for(let i=0; i<requiredCount; i++) {
+                const slot = document.createElement('div');
+                slot.className = 'mini-slot';
+                slot.textContent = i + 1;
+                selectionSlots.appendChild(slot);
+            }
+
+            spreadDeck.innerHTML = '';
+            currentDeck.forEach((card, index) => {
+                const cardDOM = document.createElement('div');
+                cardDOM.className = 'selectable-card';
+                cardDOM.addEventListener('click', () => handleCardSelection(card, cardDOM));
+                spreadDeck.appendChild(cardDOM);
+            });
+        }
+
+        function handleCardSelection(cardData, cardDOM) {
+            if (drawnCards.length >= requiredCount) return;
+
+            cardDOM.classList.add('hidden');
+
+            drawnCards.push({
+                ...cardData,
+                direction: Math.random() < 0.5 ? '정방향' : '역방향',
+                isRevealed: false
+            });
+
+            const slotIndex = drawnCards.length - 1;
+            const targetSlot = selectionSlots.children[slotIndex];
+            targetSlot.innerHTML = `<div class="mini-card"></div>`;
+
+            if (drawnCards.length === requiredCount) {
+                setTimeout(startRevealPhase, 800);
+            } else {
+                statusMessage.textContent = `${drawnCards.length}장 선택 완료. ${requiredCount - drawnCards.length}장 더 선택하세요.`;
+            }
+        }
+
+        function startRevealPhase() {
+            selectionContainer.style.display = 'none';
+            revealContainer.style.display = 'flex';
+            statusMessage.textContent = "카드를 클릭하여 결과를 확인하세요.";
+            revealContainer.innerHTML = '';
+
+            const labels = requiredCount === 3 ? ["과거", "현재", "미래"] : ["과거", "현재", "미래", "조언"];
+
+            drawnCards.forEach((card, index) => {
+                const slot = document.createElement('div');
+                slot.className = 'card-slot';
+
+                const label = document.createElement('div');
+                label.className = 'slot-label';
+                label.textContent = labels[index];
+
+                const cardElem = document.createElement('div');
+                cardElem.className = 'card';
+
+                let frontContent = '';
+                
+                // ✨ 메이저/마이너 렌더링 분기 업데이트 ✨
+                if (card.type === 'major') {
+                    const reversedClass = card.direction === '역방향' ? 'is-reversed' : '';
+                    frontContent = `<img src="${card.imagePath}" class="card-img ${reversedClass}" alt="${card.name}">`;
+                } else {
+                    const dirClass = card.direction === '정방향' ? 'dir-upright' : 'dir-reversed';
+                    // 카드가 역방향이면 배경 이미지도 뒤집습니다. (가독성을 위해 텍스트는 정방향 유지)
+                    const bgReversed = card.direction === '역방향' ? 'is-reversed' : '';
+                    
+                    frontContent = `
+                        <div class="minor-card-wrapper">
+                            <img src="./images/${card.suitId}_bg.png" class="minor-bg ${bgReversed}" alt="${card.suitKor} 배경">
+                            <div class="minor-overlay">
+                                <div class="minor-rank">${card.rank}</div>
+                                <div class="minor-suit">${card.suitKor}</div>
+                                <div style="margin-top: 15px; font-size: 14px; font-weight: bold;" class="${dirClass}">[ ${card.direction} ]</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                cardElem.innerHTML = `
+                    <div class="card-inner">
+                        <div class="card-face"><img src="./images/back.png" class="card-img"></div>
+                        <div class="card-face card-front">${frontContent}</div>
+                    </div>
+                `;
+
+                cardElem.addEventListener('click', () => {
+                    if (!card.isRevealed) {
+                        cardElem.classList.add('flipped');
+                        card.isRevealed = true;
+                        checkAllRevealed();
+                    }
+                });
+
+                slot.appendChild(label);
+                slot.appendChild(cardElem);
+                revealContainer.appendChild(slot);
+            });
+        }
+
+        function checkAllRevealed() {
+            if (drawnCards.every(card => card.isRevealed)) {
+                setTimeout(() => {
+                    statusMessage.textContent = "모든 카드가 공개되었습니다.";
+                    
+                    const q = questionInput.value.trim();
+                    const labels = requiredCount === 3 ? ["과거", "현재", "미래"] : ["과거", "현재", "미래", "조언"];
+                    
+                    let promptText = `당신은 통찰력 있는 전문 타로 리더입니다. 다음 정보를 바탕으로 나의 질문에 대한 타로 카드 해석을 작성해 주세요.\n\n`;
+                    promptText += `- 질문: ${q}\n`;
+                    promptText += `- 배열법: ${requiredCount}장 스프레드\n`;
+                    promptText += `- 뽑힌 카드 정보:\n`;
+                    
+                    drawnCards.forEach((c, i) => {
+                        const currentKeyword = c.direction === '정방향' ? c.keywords.upright : c.keywords.reversed;
+                        promptText += `  ${i+1}. ${labels[i]}: ${c.name} [${c.direction}]\n`;
+                        promptText += `      - 핵심 상징: ${currentKeyword}\n`;
+                    });
+                    
+                    promptText += `\n위 카드들의 고유한 상징(핵심 상징)과 ${requiredCount}장의 카드가 만드는 유기적인 흐름을 종합적으로 분석하여, 내 질문에 대한 구체적이고 실질적인 조언을 제공해 주세요.`;
+
+                    promptTextarea.value = promptText;
+                    promptContainer.style.display = 'flex';
+                }, 1000);
+            }
+        }
+
+        copyPromptBtn.addEventListener('click', () => {
+            promptTextarea.select();
+            navigator.clipboard.writeText(promptTextarea.value)
+                .then(() => alert("✅ 프롬프트가 복사되었습니다!"))
+                .catch(err => alert("복사에 실패했습니다."));
+        });
+
+        resetBtn.addEventListener('click', () => { location.reload(); });
+    </script>
+</body>
+</html>
